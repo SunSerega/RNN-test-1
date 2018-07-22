@@ -5,23 +5,24 @@ interface
 function Round(a:sequence of real; digits:integer):sequence of real;
 
 type
-  RNN = class
+  RNNLayer=class
     
-    public h: array of real;
+    const tanining_k = 0.01;
     
-    public b_ih: array of real;
+    public l_from, l_to: integer;
+    
+    public h:array of real;
+    public prev:array of real;//only pointer
+    
+    public b: array of real;
+    
     public mtx_ih: array[,] of real;
-    
-    public b_hh: array of real;
     public mtx_hh: array[,] of real;
     
-    public b_ho: array of real;
-    public mtx_ho: array[,] of real;
     
-    
-    public l: integer;
-    public obj_to_h: object->array of real;
-    public h_to_obj: function(a:array of real):object;
+    public bp_inp: array of real;
+    public bp_ph: array of real;
+    public bp_paf_h: array of real;
     
     
     
@@ -30,50 +31,20 @@ type
     
     
     
-    {$region I/O}
-    
-    {$region AddInp}
-    
-    public procedure AddInp(data: array of real);
+    public procedure Calc;
     begin
       
-      var nh := Copy(b_hh);
+      var nh := Copy(b);
       
-      for var i1 := 0 to l - 1 do
+      for var i1 := 0 to l_to - 1 do
       begin
-        nh[i1] += b_ih[i1];
         
-        for var i2 := 0 to l - 1 do
-          nh[i1] += 
-            mtx_hh[i2,i1] * h[i2]+
-            mtx_ih[i2,i1] * data[i2];
+        for var i2 := 0 to l_from - 1 do
+          nh[i1] +=
+            mtx_ih[i2,i1] * prev[i2];
         
-        nh[i1] := act_func(nh[i1]);
-      end;
-      
-      h := nh;
-      
-    end;
-    
-    public procedure AddInp(o: object) := AddInp(obj_to_h(o));
-    
-    public procedure AddInp(text: string) :=
-    foreach var ch in text do
-      AddInp(ch);
-    
-    {$endregion AddInp}
-    
-    {$region Step}
-    
-    public function Step: array of real;
-    begin
-      
-      var nh := Copy(b_hh);
-      
-      for var i1 := 0 to l - 1 do
-      begin
-        for var i2 := 0 to l - 1 do
-          nh[i1] += 
+        for var i2 := 0 to l_to - 1 do
+          nh[i1] +=
             mtx_hh[i2,i1] * h[i2];
         
         nh[i1] := act_func(nh[i1]);
@@ -81,32 +52,140 @@ type
       
       h := nh;
       
-      Result := Copy(b_ho);
+    end;
+    
+    public procedure BackPropCalc;
+    begin
       
-      for var i1 := 0 to l - 1 do
+      var nh := Copy(b);
+      
+      for var i1 := 0 to l_to - 1 do
       begin
-        for var i2 := 0 to l - 1 do
-          Result[i1] +=
-            mtx_ho[i2,i1]*h[i2];
         
-        Result[i1] := act_func(Result[i1]);
+        for var i2 := 0 to l_from - 1 do
+          nh[i1] +=
+            mtx_ih[i2,i1] * prev[i2];
+        
+        for var i2 := 0 to l_to - 1 do
+          nh[i1] +=
+            mtx_hh[i2,i1] * h[i2];
+        
+      end;
+      
+      bp_ph := h;//Copy(h);
+      bp_inp := prev;//Copy(prev);
+      bp_paf_h := Copy(nh);
+      
+      for var i1 := 0 to l_to - 1 do
+        nh[i1] := act_func(nh[i1]);
+      
+      h := nh;
+      
+    end;
+    
+    public function BackProp(dh:array of real):array of real;
+    begin
+      Result := new real[l_from];
+      
+      for var i1 := 0 to l_to-1 do
+      begin
+        
+        var d :=
+          d_act_func(bp_paf_h[i1]) *
+          ( 2*dh[i1] ) *
+          tanining_k;
+        
+        b[i1] += d;//*1
+        
+        for var i2 := 0 to l_to - 1 do
+          mtx_hh[i2, i1] += d * bp_ph[i2];
+        
+        for var i2 := 0 to l_from - 1 do
+        begin
+          
+          Result[i2] += d * mtx_ih[i2,i1];
+          mtx_ih[i2,i1] += d * bp_inp[i2];
+          
+        end;
+        
       end;
       
     end;
     
-    public function Step(c:integer): sequence of array of real;
+    
+    procedure Clear :=
+    h := new real[l_to];
+    
+    
+    
+    public constructor(l_from, l_to:integer);
     begin
-      loop c do yield Step;
+      self.l_from := l_from;
+      self.l_to := l_to;
+      
+      h := new real[l_to];
+      
+      b := new real[l_to];
+      mtx_ih := new real[l_from, l_to];
+      mtx_hh := new real[l_to,   l_to];
+      
+      for var i2 := 0 to l_to-1 do
+      begin
+        
+        b[i2] := (Random*2-1);//*1;
+        
+        for var i1 := 0 to l_from-1 do
+          mtx_ih[i1,i2] := (Random*2-1);//*1;
+        
+        for var i1 := 0 to l_to-1 do
+          mtx_hh[i1,i2] := (Random*2-1);//*1;
+        
+      end;
+      
     end;
     
-    public function StepObj: object := h_to_obj(Step);
+  end;
+  
+  RNN = class
+    
+    public l_from, l_to: integer;
+    public lrs: array of RNNLayer;
+    
+    public obj_to_h: object->array of real;
+    public h_to_obj: function(a:array of real):object;
+    
+    
+    
+    {$region I/O}
+    
+    public function Step(inp:array of real): array of real;
+    begin
+      
+      lrs[0].prev := inp;
+      
+      foreach var lr in lrs do
+        lr.Calc;
+      
+      Result := lrs[lrs.Length-1].h;
+      
+    end;
+    
+    public function Step(inp:sequence of array of real):=
+    inp.Select(a->Step(a));
+    
+    public function StepObj(o:object): object := h_to_obj(Step(obj_to_h(o)));
     
     public function StepText(length: integer): string;
     begin
       var sb := new StringBuilder(length);
+      var last := new real[l_from];
       
       loop length do
-        sb += char(StepObj);
+      begin
+        last := Step(last);
+        
+        sb += char(h_to_obj(last));
+      end;
       
       Result := sb.ToString;
     end;
@@ -120,10 +199,13 @@ type
       {$endif DEBUG}
       
       var sb := new StringBuilder;
+      var last := new real[l_from];
       
       while true do
       begin
-        var ch := char(StepObj);
+        last := Step(last);
+        
+        var ch := char(h_to_obj(last));
         if ch = ' ' then
         begin
           words_c -= 1;
@@ -135,7 +217,7 @@ type
       Result := sb.ToString;
     end;
     
-    public function StepSentence(sentenc_c: integer := 1): string;
+    public function StepSentences(sentenc_c: integer := 1): string;
     begin
       {$ifdef DEBUG}
       
@@ -144,10 +226,13 @@ type
       {$endif DEBUG}
       
       var sb := new StringBuilder;
+      var last := new real[l_from];
       
       while true do
       begin
-        var ch := char(StepObj);
+        last := Step(last);
+        
+        var ch := char(h_to_obj(last));
         if char.IsPunctuation(ch) and (ch <> ',') then
         begin
           sentenc_c -= 1;
@@ -159,12 +244,51 @@ type
       Result := sb.ToString;
     end;
     
-    {$endregion Step}
     
-    procedure Clear;
+    public function BackPropStep(inp:array of real): array of real;
     begin
-      h := new real[l];
+      
+      lrs[0].prev := inp;
+      
+      foreach var lr in lrs do
+        lr.BackPropCalc;
+      
+      Result := lrs[lrs.Length-1].h;
+      
     end;
+    
+    public procedure BackProp(otp, exp: array of real);
+    begin
+      
+      var dh := exp;
+      for var i := 0 to l_to-1 do
+        dh[i] -= otp[i];
+      
+      for var i := lrs.Length-1 downto 0 do
+        dh := lrs[i].BackProp(dh);
+      
+    end;
+    
+    public procedure Train(inp, otp: array of real) :=
+    BackProp(BackPropStep(inp),otp);
+    
+    public procedure Train(inp, otp: sequence of char);
+    begin
+      var i_enm := inp.GetEnumerator;
+      var o_enm := inp.GetEnumerator;
+      
+      while i_enm.MoveNext and o_enm.MoveNext do
+        Train(
+          obj_to_h(i_enm.Current),
+          obj_to_h(o_enm.Current)
+        );
+    end;
+    
+    public procedure Train(text: sequence of char) := Train(char(0)+text, text);
+    
+    procedure Clear :=
+    foreach var lr in lrs do
+      lr.Clear;
     
     {$endregion I/O}
     
@@ -172,44 +296,40 @@ type
     
     private constructor := exit;
     
-    public class function GetNew(l: integer; obj_to_h: object->array of real; h_to_obj: function(a:array of real):object): RNN;
+    public class function GetNew(lrs: array of integer; obj_to_h: object->array of real; h_to_obj: function(a:array of real):object): RNN;
     begin
       Result := new RNN;
       
-      Result.l := l;
+      Result.l_from := lrs[0];
+      Result.l_to := lrs[lrs.Length-1];
+      
       Result.obj_to_h := obj_to_h;
       Result.h_to_obj := h_to_obj;
       
-      Result.h := new real[l];
-      
-      Result.b_hh := new real[l];
-      Result.mtx_hh := new real[l,l];
-      
-      Result.b_ih := new real[l];
-      Result.mtx_ih := new real[l,l];
-      
-      Result.b_ho := new real[l];
-      Result.mtx_ho := new real[l,l];
-      
-      for var x := 0 to l-1 do
+      Result.lrs := new RNNLayer[lrs.Length-1];
+      for var i := 0 to lrs.Length-2 do
       begin
-        Result.b_hh[x] := (Random*2-1)*1;
-        Result.b_ih[x] := (Random*2-1)*1;
-        Result.b_ho[x] := (Random*2-1)*1;
+        Result.lrs[i] := new RNNLayer(lrs[i],lrs[i+1]);
         
-        for var y := 0 to l-1 do
-        begin
-          var todo_uncomment := 0;
-          Result.mtx_hh[x,y] := (Random*2-1)*1;
-          Result.mtx_ih[x,y] := (Random*2-1)*1;
-          Result.mtx_ho[x,y] := (Random*2-1)*1;
-        end;
+        if i <> 0 then
+          Result.lrs[i].prev := Result.lrs[i-1].h;
       end;
+      
+      //var lr0 := Result.lrs[0];
+      //var lr1 := Result.lrs[1];
+      //var lr2 := Result.lrs[2];
+      
     end;
     
-    public class function GetNew(l: integer): RNN := GetNew(l, nil, nil);
+    public class function GetNew(lrs: array of integer): RNN := GetNew(lrs, nil, nil);
     
-    public class function GetNew(d:IDictionary<char,integer>) := GetNew(d.Count,
+    public class function GetNew(d:IDictionary<char,integer>) := GetNew(
+    Arr(
+      d.Count,
+      d.Count + d.Count div 2,
+      d.Count + d.Count div 2,
+      d.Count
+    ),
     o->
     begin
       Result := new real[d.Count];
@@ -236,7 +356,6 @@ type
     {$endregion New}
     
   end;
-
 
 implementation
 

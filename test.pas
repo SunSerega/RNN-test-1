@@ -1,35 +1,15 @@
-﻿uses BotData;
+﻿//uses BotData;
 uses RNNData;
 
 begin
   
-  Randomize(1);
-  
-  var l := 10;
-  var b := new Bot(l);
-  var inp := ArrGen(l,i->real(Random(2)));;
-  
-  writeln('created bot');
+  var key := Random(10000);
+  //key := 0;
+  writeln($'key is {key}');
   writeln;
+  Randomize(key);
   
-  while true do
-  begin
-    
-    b.brain.Clear;
-    b.brain.AddInp(inp);
-    
-    Writeln(Round(inp,2));
-    Writeln(Round(b.brain.Step,2));
-    
-    b.brain.Clear;
-    b.Train(Seq&<array of real>(inp),Seq&<array of real>(inp));
-    
-    readln;
-    
-  end;
   
-end.
-{
   
   var inp :=
   System.IO.Directory.EnumerateFiles('input')
@@ -38,6 +18,20 @@ end.
     System.IO.File.ReadAllText(fname)
   ).ToArray;
   
-  var b := new Bot(inp);
+  var rnn1 := RNN.GetNew(char(0)+inp.SelectMany(s->s));
+  
+  
+  
+  while true do
+  begin
+    var in_text := inp[Random(inp.Length)];
+    
+    //writeln('training_on:');
+    //writeln(in_text);
+    writeln;
+    
+    rnn1.Train(in_text);
+    rnn1.StepSentences.Println;
+  end;
   
 end.
